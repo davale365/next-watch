@@ -1,5 +1,8 @@
-import "dotenv/config";
+import { config } from "dotenv";
 import { defineConfig } from "drizzle-kit";
+
+config({ path: ".env.local" });
+config({ path: ".env", override: false });
 
 const url = process.env.DATABASE_URL;
 if (!url) {
@@ -11,6 +14,6 @@ export default defineConfig({
   out: "./drizzle",
   dialect: "postgresql",
   dbCredentials: { url },
-  strict: true,
+  strict: false,
   verbose: true,
 });
