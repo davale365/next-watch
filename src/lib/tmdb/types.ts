@@ -89,3 +89,27 @@ export interface TmdbTvDetail {
   vote_count: number;
   popularity: number;
 }
+
+export interface TmdbCandidate {
+  id: number;
+  media_type?: "movie" | "tv";
+  title?: string;
+  name?: string;
+  release_date?: string;
+  first_air_date?: string;
+  poster_path: string | null;
+  overview: string;
+  popularity: number;
+  vote_average: number;
+  vote_count: number;
+  genre_ids: number[];
+}
+
+export interface TmdbCandidatePage {
+  page: number;
+  total_pages: number;
+  total_results: number;
+  results: TmdbCandidate[];
+}
+
+export type TmdbDiscoverResponse = TmdbCandidatePage;

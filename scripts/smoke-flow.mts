@@ -4,9 +4,11 @@ config({ path: ".env.local" });
 import { neon } from "@neondatabase/serverless";
 import { drizzle } from "drizzle-orm/neon-http";
 import { and, eq } from "drizzle-orm";
-import schemaCjs from "../src/db/schema";
-const { users, titles, availability, reactions } =
-  (schemaCjs as unknown as typeof import("../src/db/schema"));
+import * as schemaModule from "../src/db/schema";
+const schemaCjs =
+  (schemaModule as unknown as { default?: typeof schemaModule }).default ??
+  schemaModule;
+const { users, titles, availability, reactions } = schemaCjs;
 
 const sql = neon(process.env.DATABASE_URL!);
 const db = drizzle(sql);

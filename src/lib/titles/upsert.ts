@@ -11,6 +11,63 @@ export function makeTitleId(mediaType: TmdbMediaType, tmdbId: number) {
   return `${mediaType}:${tmdbId}`;
 }
 
+export interface ShallowTitleInput {
+  mediaType: TmdbMediaType;
+  tmdbId: number;
+  title: string;
+  year: number | null;
+  posterPath: string | null;
+  overview: string;
+  genres: number[];
+  voteAverage: number;
+  voteCount: number;
+  popularity: number;
+}
+
+export async function upsertShallowTitle(
+  input: ShallowTitleInput
+): Promise<Title> {
+  const id = makeTitleId(input.mediaType, input.tmdbId);
+  const db = getDb();
+  const row = {
+    id,
+    tmdbId: input.tmdbId,
+    mediaType: input.mediaType,
+    title: input.title,
+    year: input.year,
+    posterPath: input.posterPath,
+    overview: input.overview,
+    runtimeMinutes: null,
+    genres: input.genres,
+    keywords: [],
+    castTop: [],
+    directors: [],
+    voteAverage: input.voteAverage,
+    voteCount: input.voteCount,
+    popularity: input.popularity,
+    fetchedAt: new Date(),
+  };
+  const [persisted] = await db
+    .insert(titles)
+    .values(row)
+    .onConflictDoUpdate({
+      target: titles.id,
+      set: {
+        title: row.title,
+        year: row.year,
+        posterPath: row.posterPath,
+        overview: row.overview,
+        genres: row.genres,
+        voteAverage: row.voteAverage,
+        voteCount: row.voteCount,
+        popularity: row.popularity,
+        fetchedAt: new Date(),
+      },
+    })
+    .returning();
+  return persisted;
+}
+
 function yearFromDate(date: string | undefined): number | null {
   if (!date) return null;
   const y = Number(date.slice(0, 4));
