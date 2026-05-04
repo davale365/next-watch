@@ -2,7 +2,7 @@ import "server-only";
 
 const TMDB_BASE = "https://api.themoviedb.org/3";
 
-export const TMDB_IMAGE_BASE = "https://image.tmdb.org/t/p";
+export { TMDB_IMAGE_BASE, posterUrl } from "./images";
 
 export class TmdbError extends Error {
   constructor(
@@ -90,14 +90,6 @@ export async function tmdbFetch<T>(
   const data = (await res.json()) as T;
   memoryCache.set(key, { data, expiresAt: Date.now() + ttl });
   return data;
-}
-
-export function posterUrl(
-  path: string | null | undefined,
-  size: "w185" | "w342" | "w500" | "original" = "w342"
-): string | null {
-  if (!path) return null;
-  return `${TMDB_IMAGE_BASE}/${size}${path}`;
 }
 
 export function __resetTmdbCacheForTests() {

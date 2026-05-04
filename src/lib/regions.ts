@@ -23,6 +23,6 @@ export const DEFAULT_REGION: RegionCode = "GB";
 export const ACTIVE_REGION_COPY =
   "Currently optimised for UK streaming availability.";
 
-export function isRegionActive(code: RegionCode): boolean {
+export function isRegionActive(code: string): code is RegionCode {
   return REGIONS.find((r) => r.code === code)?.status === "active";
 }
