@@ -17,6 +17,12 @@ import {
   bucketCandidates,
   selectPicksAndBackups,
 } from "./bucketer";
+import {
+  applyMoodFilter,
+  applyTimeFilter,
+  type Mood,
+  type TimeBudget,
+} from "./filters";
 import { makeReason } from "./reasons";
 import {
   confidenceFromScore,
@@ -139,7 +145,15 @@ function toPick(
   };
 }
 
-export async function getPicks(user: User): Promise<PicksResult> {
+export interface GetPicksOptions {
+  mood?: Mood;
+  time?: TimeBudget;
+}
+
+export async function getPicks(
+  user: User,
+  options: GetPicksOptions = {}
+): Promise<PicksResult> {
   const db = getDb();
   if (user.selectedPlatforms.length === 0) {
     return {
@@ -196,12 +210,27 @@ export async function getPicks(user: User): Promise<PicksResult> {
   const region = user.region as RegionCode;
   const selectedPlatforms = new Set(user.selectedPlatforms);
 
-  const candidates = await generateCandidates({
+  const rawCandidates = await generateCandidates({
     positiveTitles,
     topGenres: profile.topGenres,
     region,
     excludeIds,
   });
+
+  if (rawCandidates.length === 0) {
+    return {
+      slate: [],
+      queue: [],
+      reason: "no_picks",
+      message:
+        "We couldn't find good matches for your selected platforms — try adding more, or pick a wider mix of recent watches.",
+    };
+  }
+
+  const mood = options.mood ?? "any";
+  const time = options.time ?? "any";
+  const moodFiltered = applyMoodFilter(rawCandidates, mood);
+  const candidates = applyTimeFilter(moodFiltered, time);
 
   if (candidates.length === 0) {
     return {
@@ -209,7 +238,7 @@ export async function getPicks(user: User): Promise<PicksResult> {
       queue: [],
       reason: "no_picks",
       message:
-        "We couldn't find good matches for your selected platforms — try adding more, or pick a wider mix of recent watches.",
+        "Your mood or time filter is leaving us empty-handed. Try widening one of them.",
     };
   }
 
@@ -284,14 +313,19 @@ export async function getPicks(user: User): Promise<PicksResult> {
   }
 
   if (slate.length < SLATE_SIZE) {
+    const filterActive = mood !== "any" || time !== "any";
+    const cleared =
+      slate.length === 0
+        ? "We don't have any picks above our confidence bar yet."
+        : `Only ${slate.length} pick${slate.length === 1 ? "" : "s"} cleared our confidence bar.`;
+    const fix = filterActive
+      ? "Try widening your mood or time filter, or add more recent watches with reactions."
+      : "Add 2 more recent watches with reactions to unlock stronger recommendations.";
     return {
       slate,
       queue,
       reason: "thin_slate",
-      message:
-        slate.length === 0
-          ? "We don't have any picks above our confidence bar yet. Add 2 more recent watches with reactions to unlock stronger recommendations."
-          : `Only ${slate.length} pick${slate.length === 1 ? "" : "s"} cleared our confidence bar. Add 2 more recent watches with reactions to unlock the rest.`,
+      message: `${cleared} ${fix}`,
     };
   }
 
@@ -301,3 +335,5 @@ export async function getPicks(user: User): Promise<PicksResult> {
     reason: "ok",
   };
 }
+
+export const PICKS_CONFIDENCE_FLOOR = CONFIDENCE_FLOOR;

@@ -4,16 +4,29 @@ import { randomUUID } from "node:crypto";
 import { getCurrentUser } from "@/lib/user/session";
 import { getPicks } from "@/lib/recommender/engine";
 import { PicksClient } from "@/components/picks/PicksClient";
+import { PicksFilters } from "@/components/picks/PicksFilters";
+import {
+  parseMood,
+  parseTimeBudget,
+} from "@/lib/recommender/filters";
 import { ACTIVE_REGION_COPY, type RegionCode } from "@/lib/regions";
 
 export const dynamic = "force-dynamic";
 
-export default async function PicksPage() {
+interface Props {
+  searchParams: Promise<{ mood?: string; time?: string }>;
+}
+
+export default async function PicksPage({ searchParams }: Props) {
   const user = await getCurrentUser();
   if (!user) redirect("/");
 
+  const params = await searchParams;
+  const mood = parseMood(params.mood);
+  const time = parseTimeBudget(params.time);
+
   const region = user.region as RegionCode;
-  const result = await getPicks(user);
+  const result = await getPicks(user, { mood, time });
   const sessionId = randomUUID();
 
   if (
@@ -50,6 +63,8 @@ export default async function PicksPage() {
         </h1>
         <p className="text-sm text-muted-foreground">{ACTIVE_REGION_COPY}</p>
       </header>
+
+      <PicksFilters mood={mood} time={time} />
 
       {result.message && (
         <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-100">

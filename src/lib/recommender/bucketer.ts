@@ -17,13 +17,13 @@ function isStretch(
   profile: TasteProfile,
   dominantMt: ReturnType<typeof dominantMediaType>
 ): boolean {
-  if (profile.topGenres.length === 0) return false;
+  if (profile.topGenres.length === 0 || c.genreIds.length === 0) return false;
   const dominantSet = new Set(profile.topGenres);
-  const sharesGenre = c.genreIds.some((g) => dominantSet.has(g));
+  const novelGenres = c.genreIds.filter((g) => !dominantSet.has(g)).length;
   const newMediaType = dominantMt != null && c.mediaType !== dominantMt;
-  const newGenre = !sharesGenre && c.genreIds.length > 0;
-  const qualityOk = c.voteAverage >= profile.averageQuality - 0.2;
-  return (newMediaType || newGenre) && qualityOk;
+  const qualityFloor = Math.min(profile.averageQuality - 0.5, 7.5);
+  const qualityOk = c.voteAverage >= qualityFloor;
+  return (newMediaType || novelGenres >= 2) && qualityOk;
 }
 
 function isHiddenGem(
