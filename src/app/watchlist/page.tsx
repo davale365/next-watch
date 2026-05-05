@@ -71,7 +71,7 @@ export default async function WatchlistPage() {
                     {title.mediaType === "movie" ? "Movie" : "TV"}
                   </p>
                   <p className="mt-auto pt-2 text-[11px] text-muted-foreground">
-                    Added {ADDED_DATE_FORMAT.format(addedAt)}
+                    {`Added ${ADDED_DATE_FORMAT.format(addedAt)}`}
                   </p>
                 </div>
               </li>

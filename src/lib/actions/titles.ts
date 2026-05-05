@@ -9,10 +9,7 @@ import {
   ensureAvailabilityForTitle,
   upsertTitle,
 } from "@/lib/titles/upsert";
-import {
-  listAddedTitlesForUser,
-  type AddedTitleRow,
-} from "@/lib/titles/list";
+import type { AddedTitleRow } from "@/lib/titles/list";
 import type { RegionCode } from "@/lib/regions";
 
 const REACTION_VALUES = [
@@ -97,7 +94,3 @@ export async function removeTitleAction(input: { titleId: string }): Promise<{
   return parsed;
 }
 
-export async function listAddedTitlesAction(): Promise<AddedTitle[]> {
-  const user = await requireUser();
-  return listAddedTitlesForUser(user.id);
-}

@@ -91,7 +91,3 @@ export async function tmdbFetch<T>(
   memoryCache.set(key, { data, expiresAt: Date.now() + ttl });
   return data;
 }
-
-export function __resetTmdbCacheForTests() {
-  memoryCache.clear();
-}

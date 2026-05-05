@@ -4,12 +4,7 @@ import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { getDb } from "@/db/client";
 import { users } from "@/db/schema";
-import {
-  DEFAULT_REGION,
-  isRegionActive,
-  REGIONS,
-  type RegionCode,
-} from "@/lib/regions";
+import { isRegionActive, REGIONS, type RegionCode } from "@/lib/regions";
 import { providersForRegion } from "@/lib/providers";
 import { ensureUser, requireUser } from "@/lib/user/session";
 import type { User } from "@/db/schema";
@@ -26,19 +21,6 @@ const updateRegionSchema = z.object({
 const updatePlatformsSchema = z.object({
   platformIds: z.array(z.number().int().positive()).min(1).max(15),
 });
-
-export async function ensureUserAction(): Promise<{
-  id: string;
-  region: string;
-  selectedPlatforms: number[];
-}> {
-  const user = await ensureUser();
-  return {
-    id: user.id,
-    region: user.region,
-    selectedPlatforms: user.selectedPlatforms,
-  };
-}
 
 export async function updateRegionAction(input: {
   region: string;
@@ -76,18 +58,4 @@ export async function updatePlatformsAction(input: {
     .where(eq(users.id, user.id))
     .returning();
   return updated;
-}
-
-export async function getUserAction(): Promise<User | null> {
-  const user = await ensureUser();
-  if (!isRegionActive(user.region)) {
-    const db = getDb();
-    const [reset] = await db
-      .update(users)
-      .set({ region: DEFAULT_REGION })
-      .where(eq(users.id, user.id))
-      .returning();
-    return reset;
-  }
-  return user;
 }

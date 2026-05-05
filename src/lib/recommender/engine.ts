@@ -339,5 +339,3 @@ export async function getPicks(
     reason: "ok",
   };
 }
-
-export const PICKS_CONFIDENCE_FLOOR = CONFIDENCE_FLOOR;

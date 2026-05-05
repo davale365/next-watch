@@ -3,7 +3,7 @@ config({ path: ".env.local" });
 
 import { neon } from "@neondatabase/serverless";
 import { drizzle } from "drizzle-orm/neon-http";
-import { and, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import * as schemaModule from "../src/db/schema";
 
 const schemaCjs =
