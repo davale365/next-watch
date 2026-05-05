@@ -35,9 +35,6 @@ export default async function PicksPage({ searchParams }: Props) {
   ) {
     return (
       <main className="mx-auto flex w-full max-w-2xl flex-col gap-6 px-4 py-16">
-        <p className="text-xs font-medium uppercase tracking-widest text-muted-foreground">
-          Next Watch
-        </p>
         <h1 className="text-3xl font-semibold tracking-tight">
           Not quite ready yet.
         </h1>
@@ -54,10 +51,7 @@ export default async function PicksPage({ searchParams }: Props) {
 
   return (
     <main className="mx-auto flex w-full max-w-5xl flex-col gap-8 px-4 py-10">
-      <header className="flex flex-col gap-3">
-        <p className="text-xs font-medium uppercase tracking-widest text-muted-foreground">
-          Next Watch · 3 picks
-        </p>
+      <header className="flex flex-col gap-2">
         <h1 className="text-3xl font-semibold tracking-tight">
           Here&apos;s what to watch next.
         </h1>

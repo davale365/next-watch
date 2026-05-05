@@ -31,9 +31,6 @@ export function Wizard({
   return (
     <div className="mx-auto flex w-full max-w-2xl flex-col gap-8 px-4 py-10">
       <header className="flex flex-col gap-3">
-        <p className="text-xs font-medium uppercase tracking-widest text-muted-foreground">
-          Next Watch
-        </p>
         <StepHeader current={step} />
       </header>
 

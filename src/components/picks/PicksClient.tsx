@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { PickCard, type FeedbackAction } from "./PickCard";
 import { recordFeedbackAction } from "@/lib/actions/feedback";
@@ -30,6 +31,14 @@ export function PicksClient({
   });
   const [queue, setQueue] = useState<Pick[]>(initialQueue);
   const [error, setError] = useState<string | null>(null);
+  const [savedTitle, setSavedTitle] = useState<string | null>(null);
+  const savedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (savedTimerRef.current) clearTimeout(savedTimerRef.current);
+    };
+  }, []);
 
   const exhausted = useMemo(
     () => slate.every((p) => p === null) && queue.length === 0,
@@ -64,6 +73,12 @@ export function PicksClient({
       setQueue(nextQueue);
     }
 
+    if (action === "watchlist") {
+      setSavedTitle(pick.title);
+      if (savedTimerRef.current) clearTimeout(savedTimerRef.current);
+      savedTimerRef.current = setTimeout(() => setSavedTitle(null), 3500);
+    }
+
     try {
       await recordFeedbackAction({
         titleId: pick.titleId,
@@ -88,6 +103,25 @@ export function PicksClient({
 
   return (
     <div className="flex flex-col gap-6">
+      {savedTitle && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="flex items-center justify-between gap-3 rounded-md border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm text-emerald-900 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-100"
+        >
+          <span>
+            Saved <span className="font-medium">{savedTitle}</span> to your
+            watchlist.
+          </span>
+          <Link
+            href="/watchlist"
+            className="text-xs font-medium underline-offset-2 hover:underline"
+          >
+            View watchlist
+          </Link>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
         {slate.map((pick, idx) => (
           <div key={`slot-${idx}`} className="min-h-[200px]">
