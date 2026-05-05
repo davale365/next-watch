@@ -1,8 +1,7 @@
 import "server-only";
-import { and, eq, inArray } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { getDb } from "@/db/client";
 import {
-  feedbackEvents,
   reactions,
   titles,
   type Title,
@@ -23,6 +22,7 @@ import {
   type Mood,
   type TimeBudget,
 } from "./filters";
+import { loadFeedbackForUser } from "./feedback";
 import { makeReason } from "./reasons";
 import {
   confidenceFromScore,
@@ -181,30 +181,34 @@ export async function getPicks(
   }
 
   const reactionTitleIds = userReactions.map((r) => r.titleId);
-  const reactionTitlesRows = await db
-    .select()
-    .from(titles)
-    .where(inArray(titles.id, reactionTitleIds));
-  const titlesById = new Map(reactionTitlesRows.map((t) => [t.id, t]));
-  const profile = buildTasteProfile(userReactions, titlesById);
+  const feedback = await loadFeedbackForUser(user.id);
+
+  const titleIdsToLoad = new Set<string>([
+    ...reactionTitleIds,
+    ...feedback.signals.map((s) => s.titleId),
+  ]);
+  const titleRows =
+    titleIdsToLoad.size > 0
+      ? await db
+          .select()
+          .from(titles)
+          .where(inArray(titles.id, Array.from(titleIdsToLoad)))
+      : [];
+  const titlesById = new Map(titleRows.map((t) => [t.id, t]));
+
+  const profile = buildTasteProfile(
+    userReactions,
+    titlesById,
+    feedback.signals
+  );
 
   const positiveTitles = profile.positiveTitleIds
     .map((id) => titlesById.get(id))
     .filter((t): t is Title => t != null);
 
-  const negativeFeedbackRows = await db
-    .select({ titleId: feedbackEvents.titleId })
-    .from(feedbackEvents)
-    .where(
-      and(
-        eq(feedbackEvents.userId, user.id),
-        inArray(feedbackEvents.action, ["not_for_me", "already_seen"])
-      )
-    );
-
   const excludeIds = new Set<string>([
     ...reactionTitleIds,
-    ...negativeFeedbackRows.map((r) => r.titleId),
+    ...feedback.excludedTitleIds,
   ]);
 
   const region = user.region as RegionCode;

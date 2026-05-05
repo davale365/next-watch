@@ -1,6 +1,7 @@
 import type { Title } from "@/db/schema";
 import type { TasteProfile } from "./types";
 import type { TmdbMediaType } from "@/lib/tmdb/types";
+import type { FeedbackContribution } from "./feedback";
 
 const REACTION_WEIGHT: Record<string, number> = {
   binged: 3,
@@ -17,7 +18,8 @@ function decadeOf(year: number | null): number | null {
 
 export function buildTasteProfile(
   reactions: { titleId: string; reaction: string }[],
-  titlesById: Map<string, Title>
+  titlesById: Map<string, Title>,
+  feedbackSignals: FeedbackContribution[] = []
 ): TasteProfile {
   const genreWeights = new Map<number, number>();
   const decadeWeights = new Map<number, number>();
@@ -28,21 +30,15 @@ export function buildTasteProfile(
   let qualitySum = 0;
   let qualityCount = 0;
 
-  for (const r of reactions) {
-    const title = titlesById.get(r.titleId);
-    if (!title) continue;
-    const w = REACTION_WEIGHT[r.reaction] ?? 0;
-    if (w === 0) continue;
+  function applySignal(title: Title, w: number) {
     totalWeight += Math.abs(w);
     if (w > 0) {
       positiveWeight += w;
-      positiveTitleIds.push(r.titleId);
       if (title.voteAverage != null) {
         qualitySum += title.voteAverage * w;
         qualityCount += w;
       }
     }
-
     for (const g of title.genres) {
       genreWeights.set(g, (genreWeights.get(g) ?? 0) + w);
     }
@@ -54,6 +50,25 @@ export function buildTasteProfile(
       title.mediaType,
       (mediaTypeWeights.get(title.mediaType) ?? 0) + w
     );
+  }
+
+  for (const r of reactions) {
+    const title = titlesById.get(r.titleId);
+    if (!title) continue;
+    const w = REACTION_WEIGHT[r.reaction] ?? 0;
+    if (w === 0) continue;
+    if (w > 0) positiveTitleIds.push(r.titleId);
+    applySignal(title, w);
+  }
+
+  for (const s of feedbackSignals) {
+    const title = titlesById.get(s.titleId);
+    if (!title) continue;
+    if (s.weight === 0) continue;
+    if (s.weight > 0 && !positiveTitleIds.includes(s.titleId)) {
+      positiveTitleIds.push(s.titleId);
+    }
+    applySignal(title, s.weight);
   }
 
   const topGenres = Array.from(genreWeights.entries())
