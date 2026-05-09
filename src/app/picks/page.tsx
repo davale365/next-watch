@@ -71,6 +71,8 @@ export default async function PicksPage({ searchParams }: Props) {
         initialQueue={result.queue}
         region={region}
         sessionId={sessionId}
+        mood={mood}
+        time={time}
       />
 
       <footer className="flex items-center justify-between text-xs text-muted-foreground">

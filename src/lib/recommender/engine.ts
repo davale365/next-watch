@@ -148,6 +148,7 @@ function toPick(
 export interface GetPicksOptions {
   mood?: Mood;
   time?: TimeBudget;
+  transientExcludeIds?: Iterable<string>;
 }
 
 export async function getPicks(
@@ -209,6 +210,7 @@ export async function getPicks(
   const excludeIds = new Set<string>([
     ...reactionTitleIds,
     ...feedback.excludedTitleIds,
+    ...(options.transientExcludeIds ?? []),
   ]);
 
   const region = user.region as RegionCode;
