@@ -109,7 +109,7 @@ async function main() {
   const osRuntimes = await runtimesFor(osTitleIds);
   const osTV = [...os.slate, ...os.queue].filter((p) => p.mediaType === "tv");
   check("No TV in slate or queue", osTV.length === 0);
-  let osBadRuntime: string[] = [];
+  const osBadRuntime: string[] = [];
   for (const p of [...os.slate, ...os.queue]) {
     if (p.mediaType !== "movie") continue;
     const r = osRuntimes.get(p.titleId);
@@ -132,7 +132,7 @@ async function main() {
   const qkRuntimes = await runtimesFor(qkTitleIds);
   const qkTV = [...qk.slate, ...qk.queue].filter((p) => p.mediaType === "tv");
   check("No TV in slate or queue", qkTV.length === 0);
-  let qkBadRuntime: string[] = [];
+  const qkBadRuntime: string[] = [];
   for (const p of [...qk.slate, ...qk.queue]) {
     if (p.mediaType !== "movie") continue;
     const r = qkRuntimes.get(p.titleId);

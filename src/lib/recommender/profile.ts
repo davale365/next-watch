@@ -24,9 +24,17 @@ export function buildTasteProfile(
   const genreWeights = new Map<number, number>();
   const decadeWeights = new Map<number, number>();
   const mediaTypeWeights = new Map<TmdbMediaType, number>();
+  const castWeights = new Map<number, number>();
+  const directorWeights = new Map<number, number>();
+  const keywordWeights = new Map<number, number>();
+  const castNames = new Map<number, string>();
+  const directorNames = new Map<number, string>();
   const positiveTitleIds: string[] = [];
   let totalWeight = 0;
   let positiveWeight = 0;
+  let totalCastWeight = 0;
+  let totalDirectorWeight = 0;
+  let totalKeywordWeight = 0;
   let qualitySum = 0;
   let qualityCount = 0;
 
@@ -50,6 +58,24 @@ export function buildTasteProfile(
       title.mediaType,
       (mediaTypeWeights.get(title.mediaType) ?? 0) + w
     );
+    for (let i = 0; i < title.castTop.length; i++) {
+      const id = title.castTop[i];
+      castWeights.set(id, (castWeights.get(id) ?? 0) + w);
+      if (w > 0) totalCastWeight += w;
+      const name = title.castTopNames[i];
+      if (name && !castNames.has(id)) castNames.set(id, name);
+    }
+    for (let i = 0; i < title.directors.length; i++) {
+      const id = title.directors[i];
+      directorWeights.set(id, (directorWeights.get(id) ?? 0) + w);
+      if (w > 0) totalDirectorWeight += w;
+      const name = title.directorsNames[i];
+      if (name && !directorNames.has(id)) directorNames.set(id, name);
+    }
+    for (const k of title.keywords) {
+      keywordWeights.set(k, (keywordWeights.get(k) ?? 0) + w);
+      if (w > 0) totalKeywordWeight += w;
+    }
   }
 
   for (const r of reactions) {
@@ -85,6 +111,14 @@ export function buildTasteProfile(
     genreWeights,
     decadeWeights,
     mediaTypeWeights,
+    castWeights,
+    directorWeights,
+    keywordWeights,
+    castNames,
+    directorNames,
+    totalCastWeight,
+    totalDirectorWeight,
+    totalKeywordWeight,
     topGenres,
     averageQuality,
     positiveTitleIds,

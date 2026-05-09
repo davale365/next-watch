@@ -8,6 +8,9 @@ import type {
   TmdbMediaType,
   TmdbDiscoverResponse,
   TmdbCandidatePage,
+  TmdbCreditsResponse,
+  TmdbMovieKeywordsResponse,
+  TmdbTvKeywordsResponse,
 } from "./types";
 
 export function searchMulti(query: string, region?: string) {
@@ -57,6 +60,32 @@ export function getSimilar(mediaType: TmdbMediaType, tmdbId: number) {
     `/${mediaType}/${tmdbId}/similar`,
     { language: "en-GB", page: 1 },
     { ttlMs: 1000 * 60 * 60 }
+  );
+}
+
+export function getCredits(mediaType: TmdbMediaType, tmdbId: number) {
+  return tmdbFetch<TmdbCreditsResponse>(
+    `/${mediaType}/${tmdbId}/credits`,
+    { language: "en-GB" },
+    { ttlMs: 1000 * 60 * 60 * 24 }
+  );
+}
+
+export function getKeywords(
+  mediaType: TmdbMediaType,
+  tmdbId: number
+): Promise<TmdbMovieKeywordsResponse | TmdbTvKeywordsResponse> {
+  if (mediaType === "movie") {
+    return tmdbFetch<TmdbMovieKeywordsResponse>(
+      `/movie/${tmdbId}/keywords`,
+      {},
+      { ttlMs: 1000 * 60 * 60 * 24 }
+    );
+  }
+  return tmdbFetch<TmdbTvKeywordsResponse>(
+    `/tv/${tmdbId}/keywords`,
+    {},
+    { ttlMs: 1000 * 60 * 60 * 24 }
   );
 }
 

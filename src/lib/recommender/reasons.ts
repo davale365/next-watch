@@ -87,11 +87,98 @@ function pickFromHash(seed: string, options: number): number {
   return Math.abs(h) % options;
 }
 
+interface DirectorMatch {
+  name: string;
+  anchor: Title | null;
+}
+
+interface CastMatch {
+  names: string[];
+  anchor: Title | null;
+}
+
+function findDirectorMatch(
+  enrichment: Title | undefined,
+  profile: TasteProfile,
+  anchorTitles: Title[]
+): DirectorMatch | null {
+  if (!enrichment || enrichment.directors.length === 0) return null;
+  for (let i = 0; i < enrichment.directors.length; i++) {
+    const id = enrichment.directors[i];
+    const w = profile.directorWeights.get(id) ?? 0;
+    if (w <= 0) continue;
+    const name =
+      enrichment.directorsNames[i] ?? profile.directorNames.get(id) ?? null;
+    if (!name) continue;
+    const anchor =
+      anchorTitles.find((a) => a.directors.includes(id)) ?? null;
+    return { name, anchor };
+  }
+  return null;
+}
+
+function findCastMatch(
+  enrichment: Title | undefined,
+  profile: TasteProfile,
+  anchorTitles: Title[]
+): CastMatch | null {
+  if (!enrichment || enrichment.castTop.length === 0) return null;
+  const matched: { id: number; name: string }[] = [];
+  let anchor: Title | null = null;
+  for (let i = 0; i < enrichment.castTop.length; i++) {
+    const id = enrichment.castTop[i];
+    const w = profile.castWeights.get(id) ?? 0;
+    if (w <= 0) continue;
+    const name =
+      enrichment.castTopNames[i] ?? profile.castNames.get(id) ?? null;
+    if (!name) continue;
+    matched.push({ id, name });
+    if (!anchor) {
+      anchor = anchorTitles.find((a) => a.castTop.includes(id)) ?? null;
+    }
+    if (matched.length >= 2) break;
+  }
+  if (matched.length === 0) return null;
+  return { names: matched.map((m) => m.name), anchor };
+}
+
 interface ReasonInput {
   candidate: ScoredCandidate;
   profile: TasteProfile;
   anchorTitles: Title[];
   bucket: Bucket;
+  enrichment?: Title;
+}
+
+function castDirectorPrefix(input: ReasonInput): string | null {
+  const { candidate, profile, anchorTitles, enrichment } = input;
+  if (!enrichment) return null;
+  const variant = pickFromHash(candidate.titleId, 3);
+  const director = findDirectorMatch(enrichment, profile, anchorTitles);
+  if (director) {
+    if (director.anchor) {
+      return variant === 0
+        ? `From ${director.name}, who directed ${director.anchor.title} — `
+        : `${director.name} directed ${director.anchor.title}, and they're back behind the camera here. `;
+    }
+    return `Directed by ${director.name}, a name that keeps showing up in your favourites. `;
+  }
+  const cast = findCastMatch(enrichment, profile, anchorTitles);
+  if (cast) {
+    if (cast.anchor && cast.names.length >= 2) {
+      return `Stars ${cast.names[0]} and ${cast.names[1]}, with ${cast.names[0]} also in ${cast.anchor.title}. `;
+    }
+    if (cast.anchor) {
+      return variant === 0
+        ? `Stars ${cast.names[0]}, who you enjoyed in ${cast.anchor.title}. `
+        : `${cast.names[0]} (last seen by you in ${cast.anchor.title}) leads here. `;
+    }
+    if (cast.names.length >= 2) {
+      return `Stars ${cast.names[0]} and ${cast.names[1]}, both familiar faces from your watches. `;
+    }
+    return `Stars ${cast.names[0]}, a familiar face from your watches. `;
+  }
+  return null;
 }
 
 function safeReason(input: ReasonInput): string {
@@ -174,12 +261,19 @@ function gemReason(input: ReasonInput): string {
 }
 
 export function makeReason(input: ReasonInput): string {
+  let body: string;
   switch (input.bucket) {
     case "safe":
-      return safeReason(input);
+      body = safeReason(input);
+      break;
     case "stretch":
-      return stretchReason(input);
+      body = stretchReason(input);
+      break;
     case "gem":
-      return gemReason(input);
+      body = gemReason(input);
+      break;
   }
+  const prefix = castDirectorPrefix(input);
+  if (prefix) return `${prefix}${body}`;
+  return body;
 }

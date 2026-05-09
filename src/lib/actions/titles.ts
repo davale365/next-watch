@@ -9,6 +9,7 @@ import {
   ensureAvailabilityForTitle,
   upsertTitle,
 } from "@/lib/titles/upsert";
+import { maybeEnrichTitle } from "@/lib/titles/enrich";
 import type { AddedTitleRow } from "@/lib/titles/list";
 import type { RegionCode } from "@/lib/regions";
 
@@ -46,6 +47,11 @@ export async function addTitleAction(input: {
   await ensureAvailabilityForTitle({
     title,
     region: user.region as RegionCode,
+  });
+  await maybeEnrichTitle({
+    titleId: title.id,
+    mediaType: title.mediaType,
+    tmdbId: title.tmdbId,
   });
   const db = getDb();
   const existing = await db

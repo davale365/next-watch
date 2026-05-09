@@ -113,3 +113,38 @@ export interface TmdbCandidatePage {
 }
 
 export type TmdbDiscoverResponse = TmdbCandidatePage;
+
+export interface TmdbCreditsCastEntry {
+  id: number;
+  name: string;
+  order?: number;
+  character?: string;
+}
+
+export interface TmdbCreditsCrewEntry {
+  id: number;
+  name: string;
+  job?: string;
+  department?: string;
+}
+
+export interface TmdbCreditsResponse {
+  id: number;
+  cast: TmdbCreditsCastEntry[];
+  crew: TmdbCreditsCrewEntry[];
+}
+
+export interface TmdbKeywordEntry {
+  id: number;
+  name: string;
+}
+
+export interface TmdbMovieKeywordsResponse {
+  id: number;
+  keywords: TmdbKeywordEntry[];
+}
+
+export interface TmdbTvKeywordsResponse {
+  id: number;
+  results: TmdbKeywordEntry[];
+}

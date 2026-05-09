@@ -9,6 +9,7 @@ import {
 } from "@/db/schema";
 import { TmdbAvailabilityProvider } from "@/lib/availability/tmdb-provider";
 import { setRuntimeIfMissing, upsertShallowTitle } from "@/lib/titles/upsert";
+import { maybeEnrichTitle } from "@/lib/titles/enrich";
 import { getMovieDetail } from "@/lib/tmdb/endpoints";
 import type { RegionCode } from "@/lib/regions";
 import { generateCandidates } from "./candidates";
@@ -231,7 +232,7 @@ export async function getPicks(
     ...reactionTitleIds,
     ...feedback.signals.map((s) => s.titleId),
   ]);
-  const titleRows =
+  let titleRows =
     titleIdsToLoad.size > 0
       ? await db
           .select()
@@ -239,6 +240,39 @@ export async function getPicks(
           .where(inArray(titles.id, Array.from(titleIdsToLoad)))
       : [];
   const titlesById = new Map(titleRows.map((t) => [t.id, t]));
+
+  // Enrich any reaction or signal titles missing cast/director/keyword data so
+  // the taste profile can carry those signals on this request. Cheap on warm
+  // cache (no-op per title) and bounded by the user's small reaction set.
+  const reactionLikeTitles = titleRows.filter(
+    (t) =>
+      t.castTop.length === 0 &&
+      t.directors.length === 0 &&
+      t.keywords.length === 0
+  );
+  if (reactionLikeTitles.length > 0) {
+    await pMap(
+      reactionLikeTitles,
+      async (t) => {
+        await maybeEnrichTitle({
+          titleId: t.id,
+          mediaType: t.mediaType,
+          tmdbId: t.tmdbId,
+        });
+      },
+      PROVIDER_FETCH_CONCURRENCY
+    );
+    // Reload the rows so enriched arrays are visible to the profile builder.
+    titleRows =
+      titleIdsToLoad.size > 0
+        ? await db
+            .select()
+            .from(titles)
+            .where(inArray(titles.id, Array.from(titleIdsToLoad)))
+        : [];
+    titlesById.clear();
+    for (const t of titleRows) titlesById.set(t.id, t);
+  }
 
   const profile = buildTasteProfile(
     userReactions,
@@ -299,6 +333,17 @@ export async function getPicks(
 
   await pMap(prelimRanked, persistShallow, PROVIDER_FETCH_CONCURRENCY);
 
+  // Load candidate title rows into the shared map so cast/director enrichment
+  // (already in the DB from prior visits) flows into scoring + reasons.
+  const candidateIds = prelimRanked.map((c) => c.titleId);
+  if (candidateIds.length > 0) {
+    const candidateRows = await db
+      .select()
+      .from(titles)
+      .where(inArray(titles.id, candidateIds));
+    for (const t of candidateRows) titlesById.set(t.id, t);
+  }
+
   const runtimeCap = RUNTIME_CAPS[time];
   let runtimeFiltered: RawCandidate[] = prelimRanked;
   if (runtimeCap != null) {
@@ -335,7 +380,8 @@ export async function getPicks(
 
   const scored = scoreCandidates(
     playable.map((p) => p.candidate),
-    profile
+    profile,
+    titlesById
   );
   const providerIdsByTitleId = new Map(
     playable.map((p) => [p.candidate.titleId, p.providerIds])
@@ -348,6 +394,42 @@ export async function getPicks(
 
   const anchorTitles = positiveTitles;
 
+  // Block on enriching the chosen slate (≤3 titles) so reasons can reference
+  // cast/director on this very request. Queue and remaining candidates get
+  // best-effort enrichment so subsequent visits benefit without slowing this
+  // response.
+  const slateCandidates = selection.picks.map((p) => p.candidate);
+  const queueCandidates = selection.backups.map((p) => p.candidate);
+  if (slateCandidates.length > 0) {
+    await pMap(
+      slateCandidates,
+      async (c) => {
+        await maybeEnrichTitle({
+          titleId: c.titleId,
+          mediaType: c.mediaType,
+          tmdbId: c.tmdbId,
+        });
+      },
+      PROVIDER_FETCH_CONCURRENCY
+    );
+    const enrichedSlateRows = await db
+      .select()
+      .from(titles)
+      .where(inArray(titles.id, slateCandidates.map((c) => c.titleId)));
+    for (const t of enrichedSlateRows) titlesById.set(t.id, t);
+  }
+  if (queueCandidates.length > 0) {
+    void Promise.allSettled(
+      queueCandidates.map((c) =>
+        maybeEnrichTitle({
+          titleId: c.titleId,
+          mediaType: c.mediaType,
+          tmdbId: c.tmdbId,
+        })
+      )
+    );
+  }
+
   const slate: Pick[] = [];
   for (const { bucket, candidate } of selection.picks) {
     const confidence = confidenceFromScore(candidate.score);
@@ -357,6 +439,7 @@ export async function getPicks(
       profile,
       anchorTitles,
       bucket,
+      enrichment: titlesById.get(candidate.titleId),
     });
     slate.push(
       toPick(candidate, bucket, reason, providerIdsByTitleId.get(candidate.titleId) ?? [])
@@ -372,6 +455,7 @@ export async function getPicks(
       profile,
       anchorTitles,
       bucket,
+      enrichment: titlesById.get(candidate.titleId),
     });
     queue.push(
       toPick(candidate, bucket, reason, providerIdsByTitleId.get(candidate.titleId) ?? [])

@@ -8,6 +8,14 @@ export interface TasteProfile {
   genreWeights: Map<number, number>;
   decadeWeights: Map<number, number>;
   mediaTypeWeights: Map<TmdbMediaType, number>;
+  castWeights: Map<number, number>;
+  directorWeights: Map<number, number>;
+  keywordWeights: Map<number, number>;
+  castNames: Map<number, string>;
+  directorNames: Map<number, string>;
+  totalCastWeight: number;
+  totalDirectorWeight: number;
+  totalKeywordWeight: number;
   topGenres: number[];
   averageQuality: number;
   positiveTitleIds: string[];

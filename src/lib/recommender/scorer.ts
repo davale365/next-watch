@@ -1,3 +1,4 @@
+import type { Title } from "@/db/schema";
 import type { RawCandidate, ScoredCandidate, TasteProfile } from "./types";
 
 const WEIGHTS = {
@@ -8,21 +9,68 @@ const WEIGHTS = {
   recency: 0.05,
 };
 
-function tasteMatchScore(
-  candidate: RawCandidate,
-  profile: TasteProfile
-): number {
+const CAST_BONUS = 0.15;
+const DIRECTOR_BONUS = 0.1;
+
+function genreOverlap(candidate: RawCandidate, profile: TasteProfile): number {
   if (profile.positiveWeight <= 0) return 0;
   let overlap = 0;
   for (const g of candidate.genreIds) {
     const w = profile.genreWeights.get(g) ?? 0;
     if (w > 0) overlap += w;
   }
-  const genreFit = Math.min(1, overlap / (profile.positiveWeight * 1.2));
-  const mediaFit =
+  return Math.min(1, overlap / (profile.positiveWeight * 1.2));
+}
+
+function mediaFit(candidate: RawCandidate, profile: TasteProfile): number {
+  if (profile.positiveWeight <= 0) return 0;
+  return (
     (profile.mediaTypeWeights.get(candidate.mediaType) ?? 0) /
-    Math.max(1, profile.positiveWeight);
-  return Math.min(1, genreFit * 0.85 + mediaFit * 0.15);
+    Math.max(1, profile.positiveWeight)
+  );
+}
+
+function castFit(
+  candidate: RawCandidate,
+  profile: TasteProfile,
+  enrichment?: Title
+): number {
+  if (!enrichment || enrichment.castTop.length === 0) return 0;
+  if (profile.totalCastWeight <= 0) return 0;
+  let overlap = 0;
+  for (const id of enrichment.castTop) {
+    const w = profile.castWeights.get(id) ?? 0;
+    if (w > 0) overlap += w;
+  }
+  return Math.min(1, overlap / profile.totalCastWeight);
+}
+
+function directorFit(
+  candidate: RawCandidate,
+  profile: TasteProfile,
+  enrichment?: Title
+): number {
+  if (!enrichment || enrichment.directors.length === 0) return 0;
+  if (profile.totalDirectorWeight <= 0) return 0;
+  let overlap = 0;
+  for (const id of enrichment.directors) {
+    const w = profile.directorWeights.get(id) ?? 0;
+    if (w > 0) overlap += w;
+  }
+  return Math.min(1, overlap / profile.totalDirectorWeight);
+}
+
+function tasteMatchScore(
+  candidate: RawCandidate,
+  profile: TasteProfile,
+  enrichment?: Title
+): number {
+  const g = genreOverlap(candidate, profile);
+  const m = mediaFit(candidate, profile);
+  const base = g * 0.85 + m * 0.15;
+  const cast = castFit(candidate, profile, enrichment) * CAST_BONUS;
+  const dir = directorFit(candidate, profile, enrichment) * DIRECTOR_BONUS;
+  return Math.min(1, base + cast + dir);
 }
 
 function socialProofScore(candidate: RawCandidate): number {
@@ -53,10 +101,12 @@ function moodFitScore(): number {
 
 export function scoreCandidates(
   candidates: RawCandidate[],
-  profile: TasteProfile
+  profile: TasteProfile,
+  titlesById?: Map<string, Title>
 ): ScoredCandidate[] {
   return candidates.map((c) => {
-    const taste = tasteMatchScore(c, profile);
+    const enrichment = titlesById?.get(c.titleId);
+    const taste = tasteMatchScore(c, profile, enrichment);
     const socialProof = socialProofScore(c);
     const moodFit = moodFitScore();
     const diversity = 0;
@@ -79,7 +129,9 @@ export function preliminaryScore(
   candidate: RawCandidate,
   profile: TasteProfile
 ): number {
-  const taste = tasteMatchScore(candidate, profile);
+  const g = genreOverlap(candidate, profile);
+  const m = mediaFit(candidate, profile);
+  const taste = g * 0.85 + m * 0.15;
   const social = socialProofScore(candidate);
   return 0.65 * taste + 0.35 * social;
 }
