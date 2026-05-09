@@ -1,7 +1,7 @@
 import type { RawCandidate } from "./types";
 
 export type Mood = "any" | "lighthearted" | "intense" | "thoughtful";
-export type TimeBudget = "any" | "one_sitting" | "binge";
+export type TimeBudget = "any" | "quick" | "one_sitting" | "binge";
 
 export const MOOD_OPTIONS: { value: Mood; label: string }[] = [
   { value: "any", label: "Any mood" },
@@ -12,9 +12,15 @@ export const MOOD_OPTIONS: { value: Mood; label: string }[] = [
 
 export const TIME_OPTIONS: { value: TimeBudget; label: string }[] = [
   { value: "any", label: "Any time" },
+  { value: "quick", label: "Quick (≤90 min)" },
   { value: "one_sitting", label: "Just one sitting" },
   { value: "binge", label: "Time to binge" },
 ];
+
+export const RUNTIME_CAPS: Partial<Record<TimeBudget, number>> = {
+  quick: 90,
+  one_sitting: 130,
+};
 
 const MOOD_GENRES: Record<Exclude<Mood, "any">, Set<number>> = {
   lighthearted: new Set([35, 10751, 16, 10402, 14, 10749]),
@@ -34,7 +40,12 @@ export function isMood(value: string | null | undefined): value is Mood {
 export function isTimeBudget(
   value: string | null | undefined
 ): value is TimeBudget {
-  return value === "any" || value === "one_sitting" || value === "binge";
+  return (
+    value === "any" ||
+    value === "quick" ||
+    value === "one_sitting" ||
+    value === "binge"
+  );
 }
 
 export function parseMood(value: string | null | undefined): Mood {
@@ -60,9 +71,22 @@ export function applyTimeFilter(
   candidates: RawCandidate[],
   time: TimeBudget
 ): RawCandidate[] {
-  if (time === "any") return candidates;
-  if (time === "one_sitting") {
-    return candidates.filter((c) => c.mediaType === "movie");
-  }
-  return candidates;
+  if (time === "any" || time === "binge") return candidates;
+  // quick + one_sitting are single-watch budgets — TV (binge format) is excluded.
+  return candidates.filter((c) => c.mediaType === "movie");
+}
+
+export function applyRuntimeFilter(
+  candidates: RawCandidate[],
+  time: TimeBudget,
+  runtimesByTitleId: Map<string, number | null>
+): RawCandidate[] {
+  const cap = RUNTIME_CAPS[time];
+  if (cap == null) return candidates;
+  return candidates.filter((c) => {
+    if (c.mediaType !== "movie") return true;
+    const r = runtimesByTitleId.get(c.titleId);
+    if (r == null) return false;
+    return r <= cap;
+  });
 }

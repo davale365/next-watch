@@ -8,7 +8,8 @@ import {
   type User,
 } from "@/db/schema";
 import { TmdbAvailabilityProvider } from "@/lib/availability/tmdb-provider";
-import { upsertShallowTitle } from "@/lib/titles/upsert";
+import { setRuntimeIfMissing, upsertShallowTitle } from "@/lib/titles/upsert";
+import { getMovieDetail } from "@/lib/tmdb/endpoints";
 import type { RegionCode } from "@/lib/regions";
 import { generateCandidates } from "./candidates";
 import { buildTasteProfile } from "./profile";
@@ -18,7 +19,9 @@ import {
 } from "./bucketer";
 import {
   applyMoodFilter,
+  applyRuntimeFilter,
   applyTimeFilter,
+  RUNTIME_CAPS,
   type Mood,
   type TimeBudget,
 } from "./filters";
@@ -122,6 +125,46 @@ async function persistShallow(c: RawCandidate): Promise<void> {
   } catch (err) {
     console.warn("[engine] persistShallow failed for", c.titleId, err);
   }
+}
+
+async function loadRuntimes(
+  candidates: RawCandidate[]
+): Promise<Map<string, number | null>> {
+  const db = getDb();
+  const ids = candidates.map((c) => c.titleId);
+  if (ids.length === 0) return new Map();
+  const rows = await db
+    .select({ id: titles.id, runtimeMinutes: titles.runtimeMinutes })
+    .from(titles)
+    .where(inArray(titles.id, ids));
+  return new Map(rows.map((r) => [r.id, r.runtimeMinutes]));
+}
+
+async function enrichMissingMovieRuntimes(
+  candidates: RawCandidate[],
+  runtimes: Map<string, number | null>
+): Promise<void> {
+  const needs = candidates.filter(
+    (c) => c.mediaType === "movie" && runtimes.get(c.titleId) == null
+  );
+  if (needs.length === 0) return;
+  await pMap(
+    needs,
+    async (c) => {
+      try {
+        const detail = await getMovieDetail(c.tmdbId);
+        const runtime =
+          typeof detail.runtime === "number" && detail.runtime > 0
+            ? detail.runtime
+            : null;
+        runtimes.set(c.titleId, runtime);
+        if (runtime != null) await setRuntimeIfMissing(c.titleId, runtime);
+      } catch {
+        // leave runtime null in the map → strict policy in applyRuntimeFilter excludes
+      }
+    },
+    PROVIDER_FETCH_CONCURRENCY
+  );
 }
 
 function toPick(
@@ -256,8 +299,25 @@ export async function getPicks(
 
   await pMap(prelimRanked, persistShallow, PROVIDER_FETCH_CONCURRENCY);
 
+  const runtimeCap = RUNTIME_CAPS[time];
+  let runtimeFiltered: RawCandidate[] = prelimRanked;
+  if (runtimeCap != null) {
+    const runtimeMap = await loadRuntimes(prelimRanked);
+    await enrichMissingMovieRuntimes(prelimRanked, runtimeMap);
+    runtimeFiltered = applyRuntimeFilter(prelimRanked, time, runtimeMap);
+    if (runtimeFiltered.length === 0) {
+      return {
+        slate: [],
+        queue: [],
+        reason: "no_picks",
+        message:
+          "No movies in your shortlist fit that time budget. Try widening the time filter or your platforms.",
+      };
+    }
+  }
+
   const withAvailability = await lazyAvailability(
-    prelimRanked,
+    runtimeFiltered,
     region,
     selectedPlatforms
   );

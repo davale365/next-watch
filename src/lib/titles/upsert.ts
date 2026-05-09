@@ -1,5 +1,5 @@
 import "server-only";
-import { eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { getDb } from "@/db/client";
 import { titles, type Title } from "@/db/schema";
 import { getMovieDetail, getTvDetail } from "@/lib/tmdb/endpoints";
@@ -159,4 +159,15 @@ export async function getTitleById(id: string): Promise<Title | null> {
   const db = getDb();
   const rows = await db.select().from(titles).where(eq(titles.id, id)).limit(1);
   return rows[0] ?? null;
+}
+
+export async function setRuntimeIfMissing(
+  titleId: string,
+  runtime: number
+): Promise<void> {
+  const db = getDb();
+  await db
+    .update(titles)
+    .set({ runtimeMinutes: runtime })
+    .where(and(eq(titles.id, titleId), isNull(titles.runtimeMinutes)));
 }
