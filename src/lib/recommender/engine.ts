@@ -27,6 +27,7 @@ import {
   type TimeBudget,
 } from "./filters";
 import { loadFeedbackForUser } from "./feedback";
+import { logEvent, Phaser } from "@/lib/log";
 import { makeReason } from "./reasons";
 import {
   confidenceFromScore,
@@ -200,13 +201,48 @@ export async function getPicks(
   options: GetPicksOptions = {}
 ): Promise<PicksResult> {
   const db = getDb();
+  const phaser = new Phaser();
+  const requestId = crypto.randomUUID();
+  const transientExcludeCount = options.transientExcludeIds
+    ? Array.from(options.transientExcludeIds).length
+    : 0;
+
+  const metrics: {
+    candidates_total?: number;
+    candidates_after_mood?: number;
+    candidates_after_time?: number;
+    candidates_after_runtime?: number;
+    prelim_top_n?: number;
+    playable_n?: number;
+  } = {};
+
+  function finish(result: PicksResult): PicksResult {
+    logEvent("picks.request", {
+      request_id: requestId,
+      user_id: user.id,
+      region: user.region,
+      platform_count: user.selectedPlatforms.length,
+      mood: options.mood ?? "any",
+      time: options.time ?? "any",
+      transient_exclude_count: transientExcludeCount,
+      reason: result.reason ?? null,
+      slate_n: result.slate.length,
+      queue_n: result.queue.length,
+      slate_confidences: result.slate.map((p) => p.confidence),
+      queue_confidences: result.queue.map((p) => p.confidence),
+      ...metrics,
+      ...phaser.toFields(),
+    });
+    return result;
+  }
+
   if (user.selectedPlatforms.length === 0) {
-    return {
+    return finish({
       slate: [],
       queue: [],
       reason: "no_platforms",
       message: "Pick at least one streaming platform to get recommendations.",
-    };
+    });
   }
 
   const userReactions = await db
@@ -215,14 +251,15 @@ export async function getPicks(
     .where(eq(reactions.userId, user.id));
 
   if (userReactions.length < MIN_REACTIONS) {
-    return {
+    phaser.mark("load_user_data_ms");
+    return finish({
       slate: [],
       queue: [],
       reason: "needs_more_titles",
       message: `Add ${MIN_REACTIONS - userReactions.length} more recent watch${
         MIN_REACTIONS - userReactions.length === 1 ? "" : "es"
       } with a reaction to unlock recommendations.`,
-    };
+    });
   }
 
   const reactionTitleIds = userReactions.map((r) => r.titleId);
@@ -274,6 +311,8 @@ export async function getPicks(
     for (const t of titleRows) titlesById.set(t.id, t);
   }
 
+  phaser.mark("load_user_data_ms");
+
   const profile = buildTasteProfile(
     userReactions,
     titlesById,
@@ -292,6 +331,7 @@ export async function getPicks(
 
   const region = user.region as RegionCode;
   const selectedPlatforms = new Set(user.selectedPlatforms);
+  phaser.mark("profile_ms");
 
   const rawCandidates = await generateCandidates({
     positiveTitles,
@@ -299,30 +339,35 @@ export async function getPicks(
     region,
     excludeIds,
   });
+  metrics.candidates_total = rawCandidates.length;
+  phaser.mark("candidates_ms");
 
   if (rawCandidates.length === 0) {
-    return {
+    return finish({
       slate: [],
       queue: [],
       reason: "no_picks",
       message:
         "We couldn't find good matches for your selected platforms — try adding more, or pick a wider mix of recent watches.",
-    };
+    });
   }
 
   const mood = options.mood ?? "any";
   const time = options.time ?? "any";
   const moodFiltered = applyMoodFilter(rawCandidates, mood);
+  metrics.candidates_after_mood = moodFiltered.length;
   const candidates = applyTimeFilter(moodFiltered, time);
+  metrics.candidates_after_time = candidates.length;
+  phaser.mark("filter_ms");
 
   if (candidates.length === 0) {
-    return {
+    return finish({
       slate: [],
       queue: [],
       reason: "no_picks",
       message:
         "Your mood or time filter is leaving us empty-handed. Try widening one of them.",
-    };
+    });
   }
 
   const prelimRanked = candidates
@@ -330,6 +375,8 @@ export async function getPicks(
     .sort((a, b) => b.prelim - a.prelim)
     .slice(0, TOP_N_FOR_AVAILABILITY)
     .map((x) => x.c);
+  metrics.prelim_top_n = prelimRanked.length;
+  phaser.mark("prelim_ms");
 
   await pMap(prelimRanked, persistShallow, PROVIDER_FETCH_CONCURRENCY);
 
@@ -343,6 +390,7 @@ export async function getPicks(
       .where(inArray(titles.id, candidateIds));
     for (const t of candidateRows) titlesById.set(t.id, t);
   }
+  phaser.mark("shallow_upsert_ms");
 
   const runtimeCap = RUNTIME_CAPS[time];
   let runtimeFiltered: RawCandidate[] = prelimRanked;
@@ -350,14 +398,16 @@ export async function getPicks(
     const runtimeMap = await loadRuntimes(prelimRanked);
     await enrichMissingMovieRuntimes(prelimRanked, runtimeMap);
     runtimeFiltered = applyRuntimeFilter(prelimRanked, time, runtimeMap);
+    metrics.candidates_after_runtime = runtimeFiltered.length;
+    phaser.mark("runtime_enrich_ms");
     if (runtimeFiltered.length === 0) {
-      return {
+      return finish({
         slate: [],
         queue: [],
         reason: "no_picks",
         message:
           "No movies in your shortlist fit that time budget. Try widening the time filter or your platforms.",
-      };
+      });
     }
   }
 
@@ -367,15 +417,17 @@ export async function getPicks(
     selectedPlatforms
   );
   const playable = withAvailability.filter((p) => p.providerIds.length > 0);
+  metrics.playable_n = playable.length;
+  phaser.mark("availability_ms");
 
   if (playable.length === 0) {
-    return {
+    return finish({
       slate: [],
       queue: [],
       reason: "no_picks",
       message:
         "Nothing in your matches is available on your platforms right now. Add more platforms or refresh later.",
-    };
+    });
   }
 
   const scored = scoreCandidates(
@@ -393,6 +445,7 @@ export async function getPicks(
   });
 
   const anchorTitles = positiveTitles;
+  phaser.mark("score_bucket_ms");
 
   // Block on enriching the chosen slate (≤3 titles) so reasons can reference
   // cast/director on this very request. Queue and remaining candidates get
@@ -462,6 +515,8 @@ export async function getPicks(
     );
   }
 
+  phaser.mark("slate_enrich_ms");
+
   if (slate.length < SLATE_SIZE) {
     const filterActive = mood !== "any" || time !== "any";
     const cleared =
@@ -471,17 +526,17 @@ export async function getPicks(
     const fix = filterActive
       ? "Try widening your mood or time filter, or add more recent watches with reactions."
       : "Add 2 more recent watches with reactions to unlock stronger recommendations.";
-    return {
+    return finish({
       slate,
       queue,
       reason: "thin_slate",
       message: `${cleared} ${fix}`,
-    };
+    });
   }
 
-  return {
+  return finish({
     slate,
     queue,
     reason: "ok",
-  };
+  });
 }

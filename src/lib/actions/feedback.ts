@@ -4,6 +4,7 @@ import { z } from "zod";
 import { getDb } from "@/db/client";
 import { feedbackEvents, watchlist } from "@/db/schema";
 import { requireUser } from "@/lib/user/session";
+import { logEvent } from "@/lib/log";
 
 const FEEDBACK_ACTIONS = [
   "interested",
@@ -45,6 +46,14 @@ export async function recordFeedbackAction(input: {
       .values({ userId: user.id, titleId: parsed.titleId })
       .onConflictDoNothing();
   }
+
+  logEvent("picks.feedback", {
+    user_id: user.id,
+    title_id: parsed.titleId,
+    action: parsed.action,
+    bucket: parsed.bucket ?? null,
+    session_id: parsed.sessionId ?? null,
+  });
 
   return { ok: true };
 }
